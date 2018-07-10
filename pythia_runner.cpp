@@ -10,6 +10,8 @@
 // STL
 #include <iostream>
 #include <string> 
+#include <fstream>
+#include <map>
 
 // #include <cstdio>
 // #include <iostream>
@@ -38,6 +40,11 @@
 // #include "TParticlePDG.h"
 
 
+#include "TH1F.h"
+#include "TH1D.h"
+#include "TH2D.h"
+#include "TH1I.h"
+
 using namespace std;
 
 
@@ -48,7 +55,7 @@ TFile 			*tFile = nullptr;
 TNtuple 		*ntuple = nullptr;
 int 			nParticles = 0;
 
-#define PID_c 4
+#define PID_b 5
 #define PID_mu 13
 #define PID_string 92
 
@@ -57,13 +64,67 @@ int 			nParticles = 0;
 #define K_ID 2
 #define K_PARENT 3
 
-void setupPythia( int trigger, long int iseed = 0 ){
+
+TH1 * hParentId = nullptr,
+	*hPt = nullptr,
+	*hEta = nullptr,
+	*hPhi = nullptr,
+	*hPairPt = nullptr,
+	*hPairEta = nullptr,
+	*hPairY = nullptr,
+	*hPairPhi = nullptr; 
+
+TH2 *hFullAcc_dNdM_pT = nullptr, // full phase space
+	*hPairCut_dNdM_pT = nullptr, // |y| < 0.5
+	*hAccCut0_dNdM_pT = nullptr, // +|\eta| < 0.5
+	*hAccCut1_dNdM_pT = nullptr; // +p_T > 1.1
+
+
+// NOTE
+// I did not turn off any decay channels
+// so I don't need to do the cross section weighting like in cc-bar
+// I decided not to do this because with bb-bar you need to do 2 levels of 
+// br scaling, and it is not worth it.
+
+
+// map<size_t, double> branchingRatios = {
+// 	{411, 0.176},
+// 	{421,0.067},
+// 	{431,0.065},
+// 	{4122,0.045},
+// 	{511, 0.105}, // B0->mu + anything, from pythia table
+// 	{}
+// };
+
+
+unsigned long long int get_seed(){
+	unsigned long long int random_value = 0; //Declare value to store data into
+	size_t size = sizeof(random_value); //Declare size of data
+	ifstream urandom("/dev/urandom", ios::in|ios::binary); //Open stream
+	if(urandom) //Check if stream is open
+	{
+		urandom.read(reinterpret_cast<char*>(&random_value), size); //Read from urandom
+		if(urandom) {
+			return random_value;
+		}
+		else { //Read failed
+			return 0;
+		}
+		urandom.close(); //close stream
+	} else { //Open failed
+		std::cerr << "Failed to open /dev/urandom" << std::endl;
+	}
+	return 0;
+}
+
+
+void setupPythia( int trigger, long int seed = 0 ){
 	pythia = new TPythia6();
 
 	const int MSEL_MINBIAS = 1;
-	const int MSEL_CCBAR_TRIG = 4;
-	if ( MSEL_MINBIAS != trigger && MSEL_CCBAR_TRIG != trigger ){
-		cout << "WARNING: trigger must be (1=mb) or (4=ccbar), got " << trigger << endl;
+	const int MSEL_BBBAR_TRIG = 5;
+	if ( MSEL_MINBIAS != trigger && MSEL_BBBAR_TRIG != trigger ){
+		cout << "WARNING: trigger must be (1=mb) or (5=bbbar), got " << trigger << endl;
 	}
 
 	pythia->SetMSEL(trigger);
@@ -72,44 +133,18 @@ void setupPythia( int trigger, long int iseed = 0 ){
 	pythia->SetPARP(91,1.0); //<kT>
 	pythia->SetPARP(67,1.0);  //mstp*4
 
-
-	// // TURN ON relavent ccbar decays
-	for(int i=673; i<=683; i++) pythia->SetMDME(i,1,0); //D+ ->e
-	for(int i=684; i<=694; i++) pythia->SetMDME(i,1,1); //D+ -> mu
-	for(int i=695; i<=735; i++) pythia->SetMDME(i,1,0); //D+ -> other
-
-	// 	// D0
-	for(int i=747; i<=754; i++) pythia->SetMDME(i,1,0); //D0 -> e
-	for(int i=755; i<=762; i++) pythia->SetMDME(i,1,1); //D0 -> mu
-	for(int i=763; i<=807; i++) pythia->SetMDME(i,1,0); //D0 -> other
-
-	for(int i=818; i<=823; i++) pythia->SetMDME(i,1,0); //Ds -> e
-	for(int i=824; i<=828; i++) pythia->SetMDME(i,1,1); //Ds -> mu
-	for(int i=829; i<=850; i++) pythia->SetMDME(i,1,0); //Ds -> other
-
-	for(int i=857; i<=862; i++) pythia->SetMDME(i,1,0); //eta_c,J/psi,chi_2c
-	for(int i=1090; i<=1096; i++) pythia->SetMDME(i,1,0); //Lambda_c -> e
-	for(int i=1097; i<=1103; i++) pythia->SetMDME(i,1,1); //Lambda_c -> mu
-	for(int i=1104; i<=1165; i++) pythia->SetMDME(i,1,0); //Lambda_c -> other
-		
-
-	// for(int i=755; i<=807; i++) pythia->SetMDME(i,1,0); //D0
-	// pythia->SetMDME(818,1,0); //Ds
-	// for(int i=824; i<=850; i++) pythia->SetMDME(i,1,0); //Ds
-	// for(int i=857; i<=862; i++) pythia->SetMDME(i,1,0); //eta_c,J/psi,chi_2c
-	// for(int i=1097; i<=1165; i++) pythia->SetMDME(i,1,0); //Lc
-	// 
-	// 
 	
-	// TURN OFF non mu decay channels
-	// for ( int i = 673; i <= 683; i++ ) pythia->SetMDME(i,1,0); //D+->e
-	// for ( int i = 695; i <= 735; i++ ) pythia->SetMDME(i,1,0); //D+-> other
+	unsigned long long int gSeed = seed;
+	if ( 0 == seed ){
+		gSeed = get_seed();
+		cout << "Generating random seed from /dev/urandom = " << gSeed << endl;
+	} else {
+		cout << "Using user seed = " << gSeed << endl;
+	}
 
-	// TRandom3 rndm;
-	// rndm.SetSeed( iseed );
-	
+	pythia->SetMRPY(1, gSeed);
 
-	pythia->SetMRPY(1, iseed); 
+	// pythia->SetMRPY(1, iseed); 
 	pythia->Initialize("CMS","p","p",200);
 
 	pythia->Pylist(12);
@@ -118,10 +153,26 @@ void setupPythia( int trigger, long int iseed = 0 ){
 	pythia->Pystat(5);
 
 
-	string name = "./pythia_ccbar_TRIG_" + to_string( trigger ) + "_seed_" + to_string( iseed ) +".root" ;
+	string name = "./pythia_bbbar_TRIG_" + to_string( trigger ) + "_seed_" + to_string( gSeed ) +".root" ;
 	tFile = new TFile( name.c_str(), "RECREATE" );
 	tFile->cd();
-	ntuple = new TNtuple("ccbar", "ccbar to mumu","nPt:nEta:nPhi:nMass:nParentId:pPt:pEta:pPhi:pMass:pParentId:pairPt:pairEta:pairPhi:pairMass:pairY");
+
+	hParentId = new TH1I( "hParentId", "", 1000, 0, 1000 );
+	hPt  = new TH1D( "hPt", "", 150, 0, 15 );
+	hEta = new TH1D( "hEta", "", 500, -5, 5 );
+	hPhi = new TH1D( "hPhi", "", 320, -3.2, 3.2 );
+	hFullAcc_dNdM_pT = new TH2D( "hFullAcc_dNdM_pT", ";M (GeV/c^2); p_{T} (GeV/c)", 1000, 0, 10, 1500, 0, 15 );
+	hPairCut_dNdM_pT = new TH2D( "hPairCut_dNdM_pT", ";M (GeV/c^2); p_{T} (GeV/c)", 1000, 0, 10, 1500, 0, 15 );
+	hAccCut0_dNdM_pT = new TH2D( "hAccCut0_dNdM_pT", ";M (GeV/c^2); p_{T} (GeV/c)", 1000, 0, 10, 1500, 0, 15 );
+	hAccCut1_dNdM_pT = new TH2D( "hAccCut1_dNdM_pT", ";M (GeV/c^2); p_{T} (GeV/c)", 1000, 0, 10, 1500, 0, 15 );
+
+	hPairPt   = new TH1D( "hPairPt", "", 150, 0, 15 );
+	hPairEta  = new TH1D( "hPairEta", "", 500, -5, 5 );
+	hPairY    = new TH1D( "hPairY", "", 500, -5, 5 );
+	hPairPhi  = new TH1D( "hPairPhi", "", 320, -3.2, 3.2 );
+
+
+	// ntuple = new TNtuple("bbbar", "bbbar to mumu","nPt:nEta:nPhi:nMass:nParentId:pPt:pEta:pPhi:pMass:pParentId:pairPt:pairEta:pairPhi:pairMass:pairY");
 }
 
 void printPlc( int i ){
@@ -176,7 +227,7 @@ int findStrings(){
 		if(id == PID_string ){  
 			int parentIdIndex = pythia->GetK( i+1, K_PARENT);
 			
-			if(abs(pythia->GetK(parentIdIndex,2)) == PID_c){
+			if(abs(pythia->GetK(parentIdIndex,2)) == PID_b){
 				nStrings++;
 			}//charm
 
@@ -191,32 +242,37 @@ int findStrings(){
  */
 bool isMuon( int i ){
 
-	if ( abs( plcId( i ) ) == PID_mu ){
+	if ( abs( plcId( i ) ) != PID_mu )
+		return false;
+	
 
-		if ( (posX(i) != 0 || posY(i) != 0) && state( i ) != 1 ){
-			cout << "ERROR state pos mismatch" << endl;
-		}
-
-		int pIndex = parentIndex( i );
-		if ( pIndex >= 1 ){
-			// printPlc( pIndex );
-
-			int parentId = abs(plcId( pIndex ));
-			if(parentId==411||parentId==421||parentId==431||parentId==4122){
-				// printPlc( i );
-				// cout << "\tPARENT: "; printPlc( pIndex );
-				return true;
-			}
-
-		} else {
-			cout << "\t reject no parent" << endl;
-		}
+	if ( (posX(i) != 0 || posY(i) != 0) && state( i ) != 1 ){
+		cout << "ERROR state pos mismatch" << endl;
+		return false;
 	}
-	return false;
+
+	int pIndex = parentIndex( i );
+	if ( pIndex <= 0 )
+		return false;
+	// {
+	// 	// printPlc( pIndex );
+
+	// 	int parentId = abs(plcId( pIndex ));
+	// 	if(parentId==411||parentId==421||parentId==431||parentId==4122){
+	// 		// printPlc( i );
+	// 		// cout << "\tPARENT: "; printPlc( pIndex );
+	// 		return true;
+	// 	}
+
+	// } else {
+	// 	cout << "\t reject no parent" << endl;
+	// }
+	
+	return true;
 }
 
 void findMuons(){
-	
+	// cout << " START EVENT =============" << endl;
 	TLorentzVector plv, nlv, lv;
 	int pParentId = -1, nParentId = -1;
 	bool foundPos = false; 
@@ -226,6 +282,15 @@ void findMuons(){
 		int iPlc = i+1;
 		bool isMu = isMuon( iPlc );
 		int pId = plcId( iPlc );
+		int ppId = plcId( parentIndex( iPlc ) );
+		int pppId = plcId( parentIndex( parentIndex( iPlc ) ) );
+
+		// REJECT decays of non-prompt J/Psi
+		if ( 443 == abs(ppId) ) {
+			continue;
+		}
+
+
 		if (  isMu && pId == PID_mu ){
 			// set pos
 			nlv = lvec( iPlc );
@@ -237,8 +302,34 @@ void findMuons(){
 			foundPos = true;
 		}
 
-		if ( foundPos && foundNeg ) break;
 
+
+		
+		
+
+		// if ( PID_b ==  ppId ){
+		// 	cout << "found b, pid=" << pId << ", parent pId=" << plcId(  parentIndex( iPlc ) )  << endl;
+		// }
+
+		// if ( PID_string == ppId && (PID_b == pppId || -PID_b == pppId ) ){
+			// cout << "b String daughter [" << iPlc << "] = " << pId << " parent index=" << parentIndex( iPlc ) << endl;
+		// }
+
+		// if ( abs(pId) == 11  ){
+		// 	cout << "ELECTRON: " << pId << endl;
+		// 	cout << "b String daughter [" << iPlc << "] = " << pId << " parent [" << parentIndex( iPlc ) << "]=" << ppId << endl;
+		// }
+
+		// if ( abs(pId) == 13  ){
+		// 	cout << "MUON: " << pId << endl;
+		// 	cout << "b String daughter [" << iPlc << "] = " << pId << " parent [" << parentIndex( iPlc ) << "]=" << ppId << endl;
+		// }
+		
+
+		if ( foundPos && foundNeg ) {
+			// cout << "Found pos and neg muon" << endl;
+			break;
+		}
 	}
 
 	if ( foundPos && foundNeg ){
@@ -249,8 +340,43 @@ void findMuons(){
 				(float)plv.Pt(), (float)plv.Eta(), (float)plv.Phi(), (float)plv.M(), (float)pParentId,
 				(float)lv.Pt(), (float)lv.Eta(), (float)lv.Phi(), (float)lv.M(), (float)lv.Rapidity()
 		};
-		ntuple->Fill( data );
+
+		hParentId->Fill( pParentId );
+		hParentId->Fill( nParentId );
+
+		hPt->Fill( plv.Pt() );
+		hPt->Fill( nlv.Pt() );
+
+		hEta->Fill( plv.Eta() );
+		hEta->Fill( nlv.Eta() );
+
+		hPhi->Fill( plv.Phi() );
+		hPhi->Fill( nlv.Phi() );
+
+
+		hPairPt->Fill( lv.Pt() );
+		hPairEta->Fill( lv.Eta() );
+		hPairY->Fill( lv.Rapidity() );
+		hPairPhi->Fill( lv.Phi() );
+
+		hFullAcc_dNdM_pT->Fill( lv.M(), lv.Pt() );
+		if ( abs(lv.Rapidity()) < 0.5 ){
+			hPairCut_dNdM_pT->Fill( lv.M(), lv.Pt() );
+
+			if ( abs(plv.Eta()) < 0.5 && abs(nlv.Eta()) < 0.5 ){
+				hAccCut0_dNdM_pT->Fill( lv.M(), lv.Pt() );
+				if ( plv.Pt() > 1.1 && nlv.Pt() > 1.1 ){
+					hAccCut1_dNdM_pT->Fill( lv.M(), lv.Pt() );
+				} // pT > 1.1
+			} // |eta| < 0.5
+		} // |y| < 0.5
+
+		// ntuple->Fill( data );
+	} else {
+		// cout << "COULD NOT find mu+mu-" << endl;
 	}
+
+	// cout << " ============= STOP EVENT" << endl;
 }
 
 
@@ -263,6 +389,7 @@ void genEvents( ULong_t _nEvents ){
 		nParticles = pythia->GetNumberOfParticles();
 
 		int nStrings = findStrings();
+		// cout << "Found " << nStrings << " strings" << endl;
 		if ( 2 == nStrings )
 			findMuons( );
 
@@ -280,14 +407,19 @@ void genEvents( ULong_t _nEvents ){
 
 Int_t main( Int_t argc, Char_t **argv){
 	cout << "argc = " << argc << endl;
-	if ( argc < 4 ) {
-		cout  << "USAGE\n GENERATOR trig(1=mb,4=ccbar) nEvents rndSeed" << endl;
+	if ( argc < 3 ) {
+		cout  << "USAGE\n GENERATOR trig(1=mb,5=bbbar) nEvents rndSeed=0" << endl;
 		return 1;
 	}
 
 	int trigger = atoi( argv[1] );
 	int nEvents = atoi( argv[2] );
-	long int seed = atol( argv[3] );
+	
+	long int seed = 0;
+	
+	if (argc >= 4)
+		seed = atol( argv[3] );
+
 	setupPythia( trigger, seed );
 	genEvents( nEvents );
 
@@ -297,7 +429,7 @@ Int_t main( Int_t argc, Char_t **argv){
 	pythia->Pystat(5);
 
 	cout << "SAVE THEN END" << endl;
-	ntuple->Write();
+	// ntuple->Write();
 	tFile->Write();
 	tFile->Close();
 	delete tFile;
