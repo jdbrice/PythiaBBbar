@@ -56,6 +56,7 @@ TNtuple 		*ntuple = nullptr;
 int 			nParticles = 0;
 
 #define PID_b 5
+#define PID_e 11
 #define PID_mu 13
 #define PID_string 92
 
@@ -78,6 +79,21 @@ TH2 *hFullAcc_dNdM_pT = nullptr, // full phase space
 	*hPairCut_dNdM_pT = nullptr, // |y| < 0.5
 	*hAccCut0_dNdM_pT = nullptr, // +|\eta| < 0.5
 	*hAccCut1_dNdM_pT = nullptr; // +p_T > 1.1
+
+// Electrons
+TH1 *heParentId = nullptr,
+	*hePt = nullptr,
+	*heEta = nullptr,
+	*hePhi = nullptr,
+	*hePairPt = nullptr,
+	*hePairEta = nullptr,
+	*hePairY = nullptr,
+	*hePairPhi = nullptr; 
+
+TH2 *heFullAcc_dNdM_pT = nullptr, // full phase space
+	*hePairCut_dNdM_pT = nullptr, // |y| < 1.0
+	*heAccCut0_dNdM_pT = nullptr, // +|\eta| < 1.0
+	*heAccCut1_dNdM_pT = nullptr; // +p_T > 0.2
 
 
 // NOTE
@@ -172,6 +188,21 @@ void setupPythia( int trigger, long int seed = 0 ){
 	hPairPhi  = new TH1D( "hPairPhi", "", 320, -3.2, 3.2 );
 
 
+	heParentId = new TH1I( "heParentId", "", 1000, 0, 1000 );
+	hePt  = new TH1D( "hePt", "", 150, 0, 15 );
+	heEta = new TH1D( "heEta", "", 500, -5, 5 );
+	hePhi = new TH1D( "hePhi", "", 320, -3.2, 3.2 );
+	heFullAcc_dNdM_pT = new TH2D( "heFullAcc_dNdM_pT", ";M (GeV/c^2); p_{T} (GeV/c)", 1000, 0, 10, 1500, 0, 15 );
+	hePairCut_dNdM_pT = new TH2D( "hePairCut_dNdM_pT", ";M (GeV/c^2); p_{T} (GeV/c)", 1000, 0, 10, 1500, 0, 15 );
+	heAccCut0_dNdM_pT = new TH2D( "heAccCut0_dNdM_pT", ";M (GeV/c^2); p_{T} (GeV/c)", 1000, 0, 10, 1500, 0, 15 );
+	heAccCut1_dNdM_pT = new TH2D( "heAccCut1_dNdM_pT", ";M (GeV/c^2); p_{T} (GeV/c)", 1000, 0, 10, 1500, 0, 15 );
+
+	hePairPt   = new TH1D( "hePairPt", "", 150, 0, 15 );
+	hePairEta  = new TH1D( "hePairEta", "", 500, -5, 5 );
+	hePairY    = new TH1D( "hePairY", "", 500, -5, 5 );
+	hePairPhi  = new TH1D( "hePairPhi", "", 320, -3.2, 3.2 );
+
+
 	// ntuple = new TNtuple("bbbar", "bbbar to mumu","nPt:nEta:nPhi:nMass:nParentId:pPt:pEta:pPhi:pMass:pParentId:pairPt:pairEta:pairPhi:pairMass:pairY");
 }
 
@@ -238,7 +269,7 @@ int findStrings(){
 
 
 /* isMuon
- * checks particle i to see if it is decayed muon from some charmed meson
+ * checks particle i to see if it is decayed muon from some bottom or charm meson
  */
 bool isMuon( int i ){
 
@@ -257,7 +288,12 @@ bool isMuon( int i ){
 	// {
 	// 	// printPlc( pIndex );
 
-	// 	int parentId = abs(plcId( pIndex ));
+		int parentId = abs(plcId( pIndex ));
+		// reject secondaries from b decays, like phi, eta, rho, pi0 etc.
+		if ( abs(parentId) < 400 ) return false;
+
+
+
 	// 	if(parentId==411||parentId==421||parentId==431||parentId==4122){
 	// 		// printPlc( i );
 	// 		// cout << "\tPARENT: "; printPlc( pIndex );
@@ -268,19 +304,54 @@ bool isMuon( int i ){
 	// 	cout << "\t reject no parent" << endl;
 	// }
 	
+
+
+
+	return true;
+}
+
+
+/* isElectron
+ * checks particle i to see if it is decayed electron from some bottom or charm meson
+ */
+bool isElectron( int i ){
+
+	if ( abs( plcId( i ) ) != PID_e )
+		return false;
+	
+	if ( (posX(i) != 0 || posY(i) != 0) && state( i ) != 1 ){
+		cout << "ERROR state pos mismatch" << endl;
+		return false;
+	}
+
+	int pIndex = parentIndex( i );
+	if ( pIndex <= 0 )
+		return false;
+
+	int parentId = abs(plcId( pIndex ));
+	// reject secondaries from b decays, like phi, eta, rho, pi0 etc.
+	if ( abs(parentId) < 400 ) 
+		return false;
+
 	return true;
 }
 
 void findMuons(){
 	// cout << " START EVENT =============" << endl;
 	TLorentzVector plv, nlv, lv;
+	TLorentzVector plve, nlve, lve;
 	int pParentId = -1, nParentId = -1;
+	int peParentId = -1, neParentId = -1;
 	bool foundPos = false; 
 	bool foundNeg = false;
+
+	bool foundPosElec = false; 
+	bool foundNegElec = false;
 
 	for(Int_t i = 0; i < nParticles; i++){
 		int iPlc = i+1;
 		bool isMu = isMuon( iPlc );
+		bool isE = isElectron( iPlc );
 		int pId = plcId( iPlc );
 		int ppId = plcId( parentIndex( iPlc ) );
 		int pppId = plcId( parentIndex( parentIndex( iPlc ) ) );
@@ -302,47 +373,29 @@ void findMuons(){
 			foundPos = true;
 		}
 
+		if (  isE && pId == PID_e ){
+			// set pos
+			nlve = lvec( iPlc );
+			neParentId = plcId( parentIndex( iPlc ) );
+			foundNegElec = true;
+		} else if ( isE && pId == -PID_e ){
+			plve = lvec( iPlc );
+			peParentId = plcId( parentIndex( iPlc ) );
+			foundPosElec = true;
+		}
 
-
-		
-		
-
-		// if ( PID_b ==  ppId ){
-		// 	cout << "found b, pid=" << pId << ", parent pId=" << plcId(  parentIndex( iPlc ) )  << endl;
-		// }
-
-		// if ( PID_string == ppId && (PID_b == pppId || -PID_b == pppId ) ){
-			// cout << "b String daughter [" << iPlc << "] = " << pId << " parent index=" << parentIndex( iPlc ) << endl;
-		// }
-
-		// if ( abs(pId) == 11  ){
-		// 	cout << "ELECTRON: " << pId << endl;
-		// 	cout << "b String daughter [" << iPlc << "] = " << pId << " parent [" << parentIndex( iPlc ) << "]=" << ppId << endl;
-		// }
-
-		// if ( abs(pId) == 13  ){
-		// 	cout << "MUON: " << pId << endl;
-		// 	cout << "b String daughter [" << iPlc << "] = " << pId << " parent [" << parentIndex( iPlc ) << "]=" << ppId << endl;
-		// }
-		
-
-		if ( foundPos && foundNeg ) {
-			// cout << "Found pos and neg muon" << endl;
+		if ( foundPos && foundNeg && foundPosElec && foundNegElec) {
 			break;
 		}
 	}
 
+
+	// Muons
 	if ( foundPos && foundNeg ){
 		lv = plv + nlv;
 
-		float data[15] = {
-				(float)nlv.Pt(), (float)nlv.Eta(), (float)nlv.Phi(), (float)nlv.M(), (float)nParentId,
-				(float)plv.Pt(), (float)plv.Eta(), (float)plv.Phi(), (float)plv.M(), (float)pParentId,
-				(float)lv.Pt(), (float)lv.Eta(), (float)lv.Phi(), (float)lv.M(), (float)lv.Rapidity()
-		};
-
-		hParentId->Fill( pParentId );
-		hParentId->Fill( nParentId );
+		hParentId->Fill( abs(pParentId) );
+		hParentId->Fill( abs(nParentId) );
 
 		hPt->Fill( plv.Pt() );
 		hPt->Fill( nlv.Pt() );
@@ -367,6 +420,46 @@ void findMuons(){
 				hAccCut0_dNdM_pT->Fill( lv.M(), lv.Pt() );
 				if ( plv.Pt() > 1.1 && nlv.Pt() > 1.1 ){
 					hAccCut1_dNdM_pT->Fill( lv.M(), lv.Pt() );
+				} // pT > 1.1
+			} // |eta| < 0.5
+		} // |y| < 0.5
+
+		// ntuple->Fill( data );
+	} else {
+		// cout << "COULD NOT find mu+mu-" << endl;
+	}
+
+
+	// Electrons
+	if ( foundPosElec && foundNegElec ){
+		lve = plve + nlve;
+
+		heParentId->Fill( abs(peParentId) );
+		heParentId->Fill( abs(neParentId) );
+
+		hePt->Fill( plve.Pt() );
+		hePt->Fill( nlve.Pt() );
+
+		heEta->Fill( plve.Eta() );
+		heEta->Fill( nlve.Eta() );
+
+		hePhi->Fill( plve.Phi() );
+		hePhi->Fill( nlve.Phi() );
+
+
+		hePairPt->Fill( lve.Pt() );
+		hePairEta->Fill( lve.Eta() );
+		hePairY->Fill( lve.Rapidity() );
+		hePairPhi->Fill( lve.Phi() );
+
+		heFullAcc_dNdM_pT->Fill( lve.M(), lve.Pt() );
+		if ( abs(lve.Rapidity()) < 1.0 ){
+			hePairCut_dNdM_pT->Fill( lve.M(), lve.Pt() );
+
+			if ( abs(plve.Eta()) < 1.0 && abs(nlve.Eta()) < 1.0 ){
+				heAccCut0_dNdM_pT->Fill( lve.M(), lve.Pt() );
+				if ( plve.Pt() > 0.2 && nlve.Pt() > 0.2 ){
+					heAccCut1_dNdM_pT->Fill( lve.M(), lve.Pt() );
 				} // pT > 1.1
 			} // |eta| < 0.5
 		} // |y| < 0.5
