@@ -66,6 +66,8 @@ int 			nParticles = 0;
 #define K_PARENT 3
 
 
+TH1 * hEvents = nullptr;
+
 TH1 * hParentId = nullptr,
 	*hPt = nullptr,
 	*hEta = nullptr,
@@ -201,6 +203,14 @@ void setupPythia( int trigger, long int seed = 0 ){
 	hePairEta  = new TH1D( "hePairEta", "", 500, -5, 5 );
 	hePairY    = new TH1D( "hePairY", "", 500, -5, 5 );
 	hePairPhi  = new TH1D( "hePairPhi", "", 320, -3.2, 3.2 );
+
+	//1 = number thrown
+	//2 = with 2 strings
+	//3 = with muons (FullAcc)
+	//4 = PairCut
+	//5 = AccCut0
+	//6 = AccCut1
+	hEvents = new TH1D( "hEvents", "", 10, 0, 10 );
 
 
 	// ntuple = new TNtuple("bbbar", "bbbar to mumu","nPt:nEta:nPhi:nMass:nParentId:pPt:pEta:pPhi:pMass:pParentId:pairPt:pairEta:pairPhi:pairMass:pairY");
@@ -392,6 +402,7 @@ void findMuons(){
 
 	// Muons
 	if ( foundPos && foundNeg ){
+		hEvents->Fill( 3 );
 		lv = plv + nlv;
 
 		hParentId->Fill( abs(pParentId) );
@@ -414,11 +425,14 @@ void findMuons(){
 
 		hFullAcc_dNdM_pT->Fill( lv.M(), lv.Pt() );
 		if ( abs(lv.Rapidity()) < 0.5 ){
+			hEvents->Fill( 4 );
 			hPairCut_dNdM_pT->Fill( lv.M(), lv.Pt() );
 
 			if ( abs(plv.Eta()) < 0.5 && abs(nlv.Eta()) < 0.5 ){
+				hEvents->Fill( 5 );
 				hAccCut0_dNdM_pT->Fill( lv.M(), lv.Pt() );
 				if ( plv.Pt() > 1.1 && nlv.Pt() > 1.1 ){
+					hEvents->Fill( 6 );
 					hAccCut1_dNdM_pT->Fill( lv.M(), lv.Pt() );
 				} // pT > 1.1
 			} // |eta| < 0.5
@@ -481,10 +495,14 @@ void genEvents( ULong_t _nEvents ){
 		pythia->GenerateEvent();
 		nParticles = pythia->GetNumberOfParticles();
 
+		hEvents->Fill( 1 );
+
 		int nStrings = findStrings();
 		// cout << "Found " << nStrings << " strings" << endl;
-		if ( 2 == nStrings )
+		if ( 2 == nStrings ){
+			hEvents->Fill( 2 );
 			findMuons( );
+		}
 
 		if ( iEvent % 1000 == 0 )
 			cout << "." << std::flush;
