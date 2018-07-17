@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --time=0-01:20:00
-#SBATCH --partition=scavenge
+#SBATCH --partition=commons
 #SBATCH --export=ALL
 
 cd $SHARED_SCRATCH/jdb12/pythia_bbbar/
